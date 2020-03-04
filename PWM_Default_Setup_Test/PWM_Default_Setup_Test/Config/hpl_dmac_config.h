@@ -214,7 +214,7 @@
 // <i> Defines the peripheral trigger which is source of the transfer
 // <id> dmac_trifsrc_0
 #ifndef CONF_DMAC_TRIGSRC_0
-#define CONF_DMAC_TRIGSRC_0 68
+#define CONF_DMAC_TRIGSRC_0 70
 #endif
 
 // <o> Channel Arbitration Level
@@ -232,7 +232,7 @@
 // <i> Indicates whether channel event generation is enabled or not
 // <id> dmac_evoe_0
 #ifndef CONF_DMAC_EVOE_0
-#define CONF_DMAC_EVOE_0 0
+#define CONF_DMAC_EVOE_0 1
 #endif
 
 // <q> Channel Event Input
@@ -301,7 +301,7 @@
 // <i> Defines the size of one beat
 // <id> dmac_beatsize_0
 #ifndef CONF_DMAC_BEATSIZE_0
-#define CONF_DMAC_BEATSIZE_0 0
+#define CONF_DMAC_BEATSIZE_0 2
 #endif
 
 // <o> Block Action

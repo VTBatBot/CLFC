@@ -145,7 +145,8 @@ main.d main.o: .././main.c ../atmel_start.h ../driver_init.h \
  ../hal/utils/include/utils.h ../hal/include/hpl_spi_async.h \
  ../hal/include/hal_timer.h ../hal/utils/include/utils_list.h \
  ../hal/include/hpl_timer.h ../hpl/tc/hpl_tc_base.h \
- ../hal/include/hpl_pwm.h ../hal/include/hal_pwm.h
+ ../hal/include/hpl_pwm.h ../hal/include/hal_pwm.h \
+ ../hal/include/hpl_dma.h
 
 ../atmel_start.h:
 
@@ -530,3 +531,5 @@ C:\Program\ Files\ (x86)\Atmel\Studio\7.0\Packs\atmel\SAMD51_DFP\1.2.139\samd51a
 ../hal/include/hpl_pwm.h:
 
 ../hal/include/hal_pwm.h:
+
+../hal/include/hpl_dma.h:
