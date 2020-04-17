@@ -12,7 +12,7 @@ simultaneous DMA transfers
 - **`teensy_i2c_demo`**: proof-of-concept for reading data from the Teensy as
 an I2C master
 
-- **`pwm_demo`**: proof-of-concept for performing PWM using on-board timers
+- **`tc_pwm_demo`**: proof-of-concept for performing PWM using on-board timers
 
 - **`tlc5947_demo`**: proof-of-concept for performing PWM using the TLC5947
 PWM driver

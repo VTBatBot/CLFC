@@ -5,7 +5,7 @@
 
 - **`m4`**: firmware for the Adafruit Grand Central M4 Express
 
-- **`teensy`**: firmware for the Teensy
+- **`teensy`**: firmware for the Teensy 4.0
 
 - **`scripts`**: various Python scripts for interfacing with devices
 
