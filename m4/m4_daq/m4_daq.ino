@@ -1,28 +1,53 @@
+// Needs Adafruit's ZeroDMA library
+
 #include <Adafruit_ZeroDMA.h>
 #include <wiring_private.h>  // for access to pinPeripheral
 
-// Duration of waveforms in ms
+/*
+ * Configuration
+ */
+
+// Use soldered USB-Micro header
+#define SERIAL Serial
+// Use unsoldered USB pinout
+//#define SERIAL Serial2
+
+// Duration of waveforms in ms. The program size is directly proportional to
+// this value, and RAM size is the biggest bottleneck. 
 constexpr int DURATION = 30;
 
+
+/*
+ * Configuration that you probably don't want to touch
+ */
+
+// Number of bytes per page (double the number of uint16_t readings)
 constexpr int PAGE_SIZE = 4096;
-// It takes ~4.4ms to collect 4096 readings, so round up to the nearest multiple
+// It takes ~4.4ms to collect 4096/2=2048 readings, so round up to the nearest
+// multiple of 4.4
 constexpr int NUM_PAGES = (DURATION + 4.4) / 4.4;
 
-// Create buffers for DMAing data around -- the .dmabuffers section is supposed to
-// optimize the memory location for the DMA controller
+
+/*
+ * DMA buffers
+ */
+
+// Create buffers for DMAing data around -- the .dmabuffers section is supposed
+// to optimize the memory location for the DMA controller
 __attribute__ ((section(".dmabuffers"), used))
-uint16_t left_in_buffers[NUM_PAGES][PAGE_SIZE], right_in_buffers[NUM_PAGES][PAGE_SIZE], out_buffers[NUM_PAGES][PAGE_SIZE];
+uint16_t left_in_buffers[NUM_PAGES][PAGE_SIZE],
+  right_in_buffers[NUM_PAGES][PAGE_SIZE],
+  out_buffers[NUM_PAGES][PAGE_SIZE];
 
 // Index of the page currently being accessed
 uint16_t left_in_index, right_in_index, out_index;
 
-// 
-DmacDescriptor *left_in_descs[NUM_PAGES], *right_in_descs[NUM_PAGES], *out_descs[NUM_PAGES];
-
+// ZeroDMA job instances for both ADCs and the DAC
 Adafruit_ZeroDMA left_in_dma, right_in_dma, out_dma;
 
+
 void setup() {
-  // Serial doesn't work for the first second or two???
+  //TODO Serial doesn't work for the first second or two
   delay(2000);
 
   // Initialize all of the buffers
@@ -34,25 +59,30 @@ void setup() {
     }
   left_in_index = right_in_index = out_index = 0;
 
-  clock_init();
-
   // Initialize peripherals
+  clock_init();
   adc_init(A1, ADC0);
   adc_init(A3, ADC1);
   dac_init();
   dma_init();
   timer_init();
 
-  // Trigger both ADCs to enter free-run mode
+  // Trigger both ADCs to enter free-running mode
   ADC0->SWTRIG.bit.START = 1;
   ADC1->SWTRIG.bit.START = 1;
 }
 
-bool data_ready = false;
 
 void loop() {
-  if (Serial.available()) {
-    uint8_t opcode = Serial.read();
+  // Are all pages filled/is the run complete?
+  static auto data_ready = false;
+
+  /*
+   * Handle communication
+   */
+
+  if (SERIAL.available()) {
+    uint8_t opcode = SERIAL.read();
 
     // Start run
     if (opcode == 0x10) {
@@ -68,31 +98,48 @@ void loop() {
     }
     // Check run status
     else if (opcode == 0x20) {
-      Serial.write(data_ready);
+      SERIAL.write(data_ready);
     }
     // Retreive left buffer
     else if (opcode == 0x30) {
-      Serial.write(NUM_PAGES - left_in_index);
+      SERIAL.write(NUM_PAGES - left_in_index);
       while (left_in_index < NUM_PAGES) {
-        Serial.write(reinterpret_cast<uint8_t *>(left_in_buffers[left_in_index++]), sizeof(uint16_t) * PAGE_SIZE);
+        SERIAL.write(
+          reinterpret_cast<uint8_t *>(left_in_buffers[left_in_index++]),
+          sizeof(uint16_t) * PAGE_SIZE);
       }
     }
     // Retreive right buffer
     else if (opcode == 0x31) {
-      Serial.write(NUM_PAGES - right_in_index);
+      SERIAL.write(NUM_PAGES - right_in_index);
       while (right_in_index < NUM_PAGES) {
-        Serial.write(reinterpret_cast<uint8_t *>(right_in_buffers[right_in_index++]), sizeof(uint16_t) * PAGE_SIZE);
+        SERIAL.write(
+          reinterpret_cast<uint8_t *>(right_in_buffers[right_in_index++]),
+          sizeof(uint16_t) * PAGE_SIZE);
       }
     }
   }
 
+
+  /*
+   * Process events and stuff with soft deadlines
+   */
+
   // Check if the run is complete yet
-  if (!data_ready && left_in_index == NUM_PAGES && right_in_index == NUM_PAGES && out_index == NUM_PAGES) {
+  if (!data_ready && left_in_index == NUM_PAGES &&
+      right_in_index == NUM_PAGES && out_index == NUM_PAGES) {
     data_ready = true;
 
     left_in_index = right_in_index = out_index = 0;
   }
 }
+
+
+/*
+ * DMA descriptor callbacks (called when a descriptor is finished). These
+ * just increment the page index so we can track job progress to know when
+ * the run is finished
+ */
 
 void dma_left_complete(Adafruit_ZeroDMA *dma) {
   left_in_index++;
@@ -104,56 +151,31 @@ void dma_right_complete(Adafruit_ZeroDMA *dma) {
 
 void dma_out_complete(Adafruit_ZeroDMA *dma) {
   out_index++;
-
-  digitalWrite(5, HIGH);
-  digitalWrite(5, LOW);
 }
 
-void spi_init() {
-  // Reset
-  SERCOM7->SPI.CTRLA.bit.SWRST = 1;
-  while (SERCOM7->SPI.CTRLA.bit.SWRST || SERCOM7->SPI.SYNCBUSY.bit.SWRST);
 
-  //TODO fix clock NVIC
-
-  // Initialize the peripheral
-  SERCOM7->SPI.CTRLA.reg = SERCOM_SPI_CTRLA_MODE(0x3)  | // master mode
-                           SERCOM_SPI_CTRLA_DOPO(0) | // pad 0 sck 1
-                           SERCOM_SPI_CTRLA_DIPO(0) | // pad 0
-                           (0 << SERCOM_SPI_CTRLA_DORD_Pos); // MSB first
-  SERCOM7->SPI.CTRLB.reg = SERCOM_SPI_CTRLB_CHSIZE(0) | // 8-bit characters
-                          SERCOM_SPI_CTRLB_RXEN; // enable receiving
-  while (SERCOM7->SPI.SYNCBUSY.bit.CTRLB);
-
-  //TODO initialize the clock properly
-
-  // Enable the peripheral
-  SERCOM7->SPI.CTRLA.bit.ENABLE = 1;
-  while (SERCOM7->SPI.SYNCBUSY.bit.ENABLE);
-  
-  static Adafruit_ZeroDMA spi_out_dma;
-
-  // Create a DMA descriptor for feeding data into 
-  spi_out_dma.allocate();
-}
+/*
+ * Peripheral configuration
+ */
 
 void clock_init() {
-  // Create a new generic 48MHz clock for our timer
+  // Create a new generic 48MHz clock for our timer: GCLK7
   GCLK->GENCTRL[7].reg = GCLK_GENCTRL_DIV(1) |       // Divide the 48MHz clock source by divisor 1: 48MHz/1 = 48MHz
                          GCLK_GENCTRL_IDC |          // Set the duty cycle to 50/50 HIGH/LOW
                          GCLK_GENCTRL_GENEN |        // Enable GCLK7
                          GCLK_GENCTRL_SRC_DFLL;      // Select 48MHz DFLL clock source
   while (GCLK->SYNCBUSY.bit.GENCTRL7);
 
-  // Setup TCC0's clock
+  // Have TCC0 use GCLK7
   GCLK->PCHCTRL[TCC0_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK7;
   
-  // Setup ADC1's clock (ADC0 is pre-configured by Arduino)
-  // (Not true?)
+  // Have ADC1 use GCLK1 (ADC0 is already configured to GCLK0 by Arduino)
   GCLK->PCHCTRL[ADC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK1_Val | (1 << GCLK_PCHCTRL_CHEN_Pos);
 }
 
 void timer_init() {
+  // TCC0 is used to trigger the DAC writes
+
   TCC0->CTRLA.reg = TC_CTRLA_PRESCALER_DIV4 |        // Set prescaler to 8, 48MHz/8 = 6MHz
                     TC_CTRLA_PRESCSYNC_PRESC;        // Set the reset/reload to trigger on prescaler clock                 
 
@@ -171,6 +193,10 @@ void timer_init() {
 }
 
 void dma_init() {
+  static DmacDescriptor *left_in_descs[NUM_PAGES], *right_in_descs[NUM_PAGES],
+    *out_descs[NUM_PAGES];
+
+  // Create left ADC channel DMA job
   {
     left_in_dma.allocate();
   
@@ -186,11 +212,12 @@ void dma_init() {
     }
 
     //left_in_dma.loop(true);
-    left_in_dma.setTrigger(0x44);
+    left_in_dma.setTrigger(0x44); // Trigger on ADC0 read completed
     left_in_dma.setAction(DMA_TRIGGER_ACTON_BEAT);
     left_in_dma.setCallback(dma_left_complete);
   }
 
+  // Create right ADC channel DMA job
   {
     right_in_dma.allocate();
   
@@ -206,11 +233,12 @@ void dma_init() {
     }
 
     //right_in_dma.loop(true);
-    right_in_dma.setTrigger(0x46);
+    right_in_dma.setTrigger(0x46); // Trigger on ADC1 read completed
     right_in_dma.setAction(DMA_TRIGGER_ACTON_BEAT);
     right_in_dma.setCallback(dma_right_complete);
   }
 
+  // Create DAC channel DMA job
   {
     out_dma.allocate();
   
@@ -226,7 +254,7 @@ void dma_init() {
     }
 
     //out_dma.loop(true);
-    out_dma.setTrigger(0x16);
+    out_dma.setTrigger(0x16); // Trigger on DAC completed
     out_dma.setAction(DMA_TRIGGER_ACTON_BEAT);
     out_dma.setCallback(dma_out_complete);
   }
@@ -237,7 +265,8 @@ void dac_init() {
   DAC->CTRLA.bit.ENABLE = 0;
   while (DAC->SYNCBUSY.bit.ENABLE || DAC->SYNCBUSY.bit.SWRST);
 
-  // Use an external reference voltage (see errata; the internal reference is busted)
+  // Use an external reference voltage (see errata; the internal reference is
+  // busted)
   DAC->CTRLB.reg = DAC_CTRLB_REFSEL_VREFPB;
   while (DAC->SYNCBUSY.bit.ENABLE || DAC->SYNCBUSY.bit.SWRST);
 

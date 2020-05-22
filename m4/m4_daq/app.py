@@ -1,3 +1,7 @@
+"""
+Performs runs indefinitely, saving results and occassionally plotting them
+"""
+
 import matplotlib.pyplot as plt
 from datetime import datetime
 import numpy as np
@@ -8,12 +12,12 @@ import time
 import math
 import os
 
-# COM port of the M4; leave None for cross-platform auto-detection
-PORT = None
-
 # Number of runs between plot updates. Plotting almost doubles the
 # duration of each run, so keep this large
 PLOT_INTERVAL = 1
+
+# COM port of the M4; leave None for cross-platform auto-detection
+PORT = None
 
 class BatBot:
     """
@@ -26,8 +30,6 @@ class BatBot:
         plt.show()
 
     """
-        
-    FIRMWARE_VERSION = (0, 2)
     
     def __init__(self, port=None):
         """
@@ -35,7 +37,6 @@ class BatBot:
 
         :param port: optional, COM port of M4
         """
-        
         # Try to deduce the serial port
         if not port:
             port = self.guess_port()
@@ -55,7 +56,7 @@ class BatBot:
 
         :return: COM port name of discovered M4
         """
-        
+        # Vendor and product ID of SAMD51 USB Host
         VID = 0x239a
         PID = 0x8031
 
@@ -75,7 +76,6 @@ class BatBot:
         Trigger a hardware reset using the serial's DTR; highly
         dependent on hardware configuration
         """
-        
         self.ser.setDTR(False)
         time.sleep(1)
         self.ser.flushInput()
@@ -110,7 +110,6 @@ class BatBot:
 
         :return: collected data split into separate channels
         """
-
         self._start_run()
 
         self._wait_for_run_to_complete()
@@ -161,7 +160,7 @@ if __name__ == '__main__':
             if not os.path.exists(output_folder):
                 os.makedirs(output_folder)
 
-            # Write output
+            # Write output to file
             with open(output_path, 'w') as f:
                 for data in left + right:
                     f.write('{}\n'.format(data))

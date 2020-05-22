@@ -7,6 +7,4 @@
 
 - **`teensy`**: firmware for the Teensy 4.0
 
-- **`scripts`**: various Python scripts for interfacing with devices
-
 - `due`: firmware for the Arduino Due (obsoleted by `m4`)
