@@ -43,12 +43,10 @@ int main(void)
 	
 	/*DMA setup*/	
 	void dma_complete_callback(struct _dma_resource *dma_res) {
-		_dma_enable_transaction(0, false);
+		//_dma_enable_transaction(0, false);
 	}
 	
 	void configure_dma(void) {
-		USART_0.io.write(&USART_0.io, (uint8_t*)"Trying to get DMA on", 24);
-
 		struct _dma_resource* dma_res;
 		_dma_init();
 		
@@ -58,7 +56,7 @@ int main(void)
 		_dma_set_destination_address(0, (uint8_t*)&(((Sercom *)(USART_0.device.hw))->USART.DATA.reg));
 		
 		//Set how many bytes to read
-		_dma_set_data_amount(0, (uint32_t)1);
+		_dma_set_data_amount(0, (uint32_t)2);
 		//register the application callback after DMA transfer
 		_dma_get_channel_resource(&dma_res, 0);
 		dma_res->dma_cb.transfer_done = dma_complete_callback;
