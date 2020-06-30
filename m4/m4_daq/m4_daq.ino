@@ -1,5 +1,6 @@
 // Needs Adafruit's ZeroDMA library
 
+// This section includes Adafruit's ZeroDMA library. You will need to get the files on your computer in order to compile.
 #include <Adafruit_ZeroDMA.h>
 #include <wiring_private.h>  // for access to pinPeripheral
 
@@ -9,11 +10,13 @@
 
 // Use soldered USB-Micro header
 #define SERIAL Serial
-// Use unsoldered USB pinout
+
+// Use unsoldered USB pinout - Don't use this
 //#define SERIAL Serial2
 
 // Duration of waveforms in ms. The program size is directly proportional to
 // this value, and RAM size is the biggest bottleneck. 
+// Just leave this as is...
 constexpr int DURATION = 30;
 
 
@@ -22,6 +25,7 @@ constexpr int DURATION = 30;
  */
 
 // Number of bytes per page (double the number of uint16_t readings)
+// Here Brandon is defining a "Page" as a set of data  (4096 bytes)
 constexpr int PAGE_SIZE = 4096;
 // It takes ~4.4ms to collect 4096/2=2048 readings, so round up to the nearest
 // multiple of 4.4
@@ -34,32 +38,34 @@ constexpr int NUM_PAGES = (DURATION + 4.4) / 4.4;
 
 // Create buffers for DMAing data around -- the .dmabuffers section is supposed
 // to optimize the memory location for the DMA controller
-__attribute__ ((section(".dmabuffers"), used))
-uint16_t left_in_buffers[NUM_PAGES][PAGE_SIZE],
-  right_in_buffers[NUM_PAGES][PAGE_SIZE],
+// FYI --- A buffer is a pre-allocated set of memory (an array), with a name, for example "my_buffer", that you can fill with data.
+__attribute__ ((section(".dmabuffers"), used))   // This ".dmabuffers" thing is from the Adafruit zeroDMA library
+uint16_t left_in_buffers[NUM_PAGES][PAGE_SIZE],  // Here 3 buffers (arrays) are built. Each one is an array of unsigned integer, and the array's size is NUM_PAGES x PAGE_SIZE
+  right_in_buffers[NUM_PAGES][PAGE_SIZE],  
   out_buffers[NUM_PAGES][PAGE_SIZE];
 
 // Index of the page currently being accessed
-uint16_t left_in_index, right_in_index, out_index;
+uint16_t left_in_index, right_in_index, out_index;  //These essentially function as counters.
 
 // ZeroDMA job instances for both ADCs and the DAC
+// Here, three "ZeroDMA jobs" are initialized. The 'jobs' aren't started here, but later on they will be used to transfer data from the microphones to the UART.
 Adafruit_ZeroDMA left_in_dma, right_in_dma, out_dma;
 
 
 void setup() {
-  //TODO Serial doesn't work for the first second or two
+  //TODO Serial doesn't work for the first second or two - DON'T WORRY ABOUT THIS, the delay takes care of it.
   delay(2000);
 
-  // Initialize all of the buffers
+  // Initialize all of the buffers - this section just fills the buffers with a bunch of zeros.
   for (auto i = 0; i < NUM_PAGES; i++)
     for (auto j = 0; j < PAGE_SIZE; j++) {
       left_in_buffers[i][j] = 0;
       right_in_buffers[i][j] = 0;
       out_buffers[i][j] = i * 500;
     }
-  left_in_index = right_in_index = out_index = 0;
+  left_in_index = right_in_index = out_index = 0; 
 
-  // Initialize peripherals
+  // Initialize peripherals -> These functions are defined at the bottom. Essentially just setting up the board's peripherals
   clock_init();
   adc_init(A1, ADC0);
   adc_init(A3, ADC1);
@@ -74,33 +80,38 @@ void setup() {
 
 
 void loop() {
-  // Are all pages filled/is the run complete?
+  // This flag turns to true when the data is ready to send via UART
   static auto data_ready = false;
 
   /*
    * Handle communication
    */
 
-  if (SERIAL.available()) {
-    uint8_t opcode = SERIAL.read();
+  if (SERIAL.available()) {                                                 // If the M4 is sending any data over...
+    uint8_t opcode = SERIAL.read();                                         // ... Read in the data that it's sending over
 
     // Start run
-    if (opcode == 0x10) {
-      data_ready = false;
+    if (opcode == 0x10) {                                                   // If the M4 send over the OPCODE "0x10"...
+      data_ready = false;                                                   // Start the counters at 0
       left_in_index = right_in_index = out_index = 0;
 
+
+      // NOTE: Below, the "DMA->CTRL.bit.DMAENABLE = 0" syntax writes the VALUE 0 to the REGISTER POSITION "DMAENABLE" of the REGISTER "CTRL" of the "DMAC" PERIPHERAL
+      // Similar syntax can be used to write to any other register, e.g. DAC->CTRLA.bit.ENABLE = 1 or something...
+      // The names of the registers can be found in the SAMD51 datasheet
+      
       // Start all DMA jobs
-      DMAC->CTRL.bit.DMAENABLE = 0;
-      left_in_dma.startJob();
-      right_in_dma.startJob();
-      out_dma.startJob();
-      DMAC->CTRL.bit.DMAENABLE = 1;
+      DMAC->CTRL.bit.DMAENABLE = 0;                                         // Temporarily disables the DMA so that it's properties can be rewritten. 
+      left_in_dma.startJob();                                               // This line starts the DMA job for the buffer "left_in_dma" , i.e. the left ear mic.
+      right_in_dma.startJob();                                              // This line starts the DMA job for the buffer "right_in_dma"
+      out_dma.startJob();                                                   // This line starts the DMA job for the output buffer, i.e. the data to send to the speaker
+      DMAC->CTRL.bit.DMAENABLE = 1;                                         // Now that DMA is configured, re-enable it 
     }
-    // Check run status
-    else if (opcode == 0x20) {
-      SERIAL.write(data_ready);
+    // Check run status                                                     
+    else if (opcode == 0x20) {                                              // If the incoming OPCODE is '0x20' then the M4 will return the 'data_ready' flag (true/false)
+      SERIAL.write(data_ready);                                             // Outputs TRUE or FALSE to the python script
     }
-    // Retreive left buffer
+    // Retreive left buffer                                                 // Once the OPCODE '0x30' is recieved, the M4 will send the left ear's data (contained in the buffer)
     else if (opcode == 0x30) {
       SERIAL.write(NUM_PAGES - left_in_index);
       while (left_in_index < NUM_PAGES) {
@@ -110,7 +121,7 @@ void loop() {
       }
     }
     // Retreive right buffer
-    else if (opcode == 0x31) {
+    else if (opcode == 0x31) {                                              // Similarly, once OPCODE '0x31' is recieved, the M4 sends the right ear's data
       SERIAL.write(NUM_PAGES - right_in_index);
       while (right_in_index < NUM_PAGES) {
         SERIAL.write(
@@ -128,9 +139,10 @@ void loop() {
   // Check if the run is complete yet
   if (!data_ready && left_in_index == NUM_PAGES &&
       right_in_index == NUM_PAGES && out_index == NUM_PAGES) {
-    data_ready = true;
-
-    left_in_index = right_in_index = out_index = 0;
+    data_ready = true;                                                     // If the data wasn't ready but the 3 indices have reached their limits, then the data is ready...
+                                                                           // ... So data_ready is set to TRUE. This will trigger the M4 to ask for the data that is now done...
+                                                                           // ... being collected.
+    left_in_index = right_in_index = out_index = 0;                        // This line resets all of the indices to 0
   }
 }
 
