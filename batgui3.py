@@ -26,7 +26,8 @@ class Window(QtGui.QWidget):
         
         #constants
         self.width = 800 #width of the window
-        self.height = 400 #height of the window
+        self.height = 430 #height of the window
+        self.plotWidth = 390 #width of each plot
         self.N = 10000 #number of data points
         self.fs = 400000 # sampling frequency
         self.lowcut = 20000 # low end of passed frequency range
@@ -89,8 +90,8 @@ class Window(QtGui.QWidget):
         # create plots
         self.leftPlot = pg.PlotWidget()
         self.rightPlot = pg.PlotWidget()
-        self.leftPlot.setFixedWidth(400)
-        self.rightPlot.setFixedWidth(400)
+        self.leftPlot.setFixedWidth(self.plotWidth)
+        self.rightPlot.setFixedWidth(self.plotWidth)
         
         ## Add widgets to the layout in their proper positions
         # left a gap on column 3
@@ -268,7 +269,7 @@ class Window(QtGui.QWidget):
             
     def waveformUpload(self):
         filepath = QtGui.QFileDialog.getOpenFileName(self, 'Open file', 
-                                                     '/home/devan/Coding/MuellerLab/BatBotGUI',
+                                                     '/home/devan/BatBot',
                                                      "Text Files (*.txt)") #change filepath for Jetson
         self.file = filepath[0]
         self.useUpload = True
