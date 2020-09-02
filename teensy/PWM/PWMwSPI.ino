@@ -1,6 +1,5 @@
-//SPI slave code from Github provided by Brian
+//SPI slave code from Github provided by Patrick
 #include <SPI.h>
-
 char buf [100];
 volatile byte pos;
 volatile boolean process_it;
@@ -74,29 +73,61 @@ byte c = SPDR;  // grab byte from SPI Data Register
     }  // end of room available
 }  // end of interrupt routine SPI_STC_vect
 void loop() {
-  // 50% Duty cycle output across 16 pins
+//Case statement for whether PWM is on or off
+enum {ON,OFF} OnOff=OFF;
+switch(OnOff)
+{
+  case ON:
+  //output PWM at 50% duty cycle
+  analogWrite(0,128);
+  analogWrite(1,128);
+  analogWrite(2,128);
+  analogWrite(3,128);
+  analogWrite(4,128);
+  analogWrite(5,128);
+  analogWrite(6,128);
+  analogWrite(7,128);
+  analogWrite(8,128);
+  analogWrite(9,128);
+  analogWrite(14,128);
+  analogWrite(15,128);
+  analogWrite(18,128);
+  analogWrite(19,128);
+  analogWrite(22,128);
+  analogWrite(23,128);
+  break;
+
+  case OFF:
+  //turns off PWM if there is no interrupt
+  analogWrite(0,0);
+  analogWrite(1,0);
+  analogWrite(2,0);
+  analogWrite(3,0);
+  analogWrite(4,0);
+  analogWrite(5,0);
+  analogWrite(6,0);
+  analogWrite(7,0);
+  analogWrite(8,0);
+  analogWrite(9,0);
+  analogWrite(14,0);
+  analogWrite(15,0);
+  analogWrite(18,0);
+  analogWrite(19,0);
+  analogWrite(22,0);
+  analogWrite(23,0);
+  break;
+}
   if (process_it)
       {
-      analogWrite(0,128);
-      analogWrite(1,128);
-      analogWrite(2,128);
-      analogWrite(3,128);
-      analogWrite(4,128);
-      analogWrite(5,128);
-      analogWrite(6,128);
-      analogWrite(7,128);
-      analogWrite(8,128);
-      analogWrite(9,128);
-      analogWrite(14,128);
-      analogWrite(15,128);
-      analogWrite(18,128);
-      analogWrite(19,128);
-      analogWrite(22,128);
-      analogWrite(23,128);
 
+      OnOff = ON;
       buf [pos] = 0;
       Serial.println (buf);
       pos = 0;
       process_it = false;
       }  // end of flag set
+    else{
+      OnOff= OFF;
+
+    }
 }
