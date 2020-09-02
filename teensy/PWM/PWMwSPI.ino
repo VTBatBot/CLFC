@@ -1,5 +1,7 @@
 //SPI slave code from Github provided by Patrick
 #include <SPI.h>
+#include <avr/io.h>
+#include <avr/interrupt.h>
 char buf [100];
 volatile byte pos;
 volatile boolean process_it;
