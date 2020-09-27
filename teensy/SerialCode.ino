@@ -2,10 +2,10 @@
 
 #include <Arduino.h>
 
+uint16_t stopcode = 12345;
 void setup() {
   analogReadRes(12);
   analogReadAveraging(2);
-
 }
 
 constexpr int num_pins = 2;
@@ -25,7 +25,7 @@ void loop() {
    for(int i=0;i < num_readings; i++){
       for(int j=0; j < num_pins; j++){
         Serial.print(readings[j][i]);
-        Serial.print("e");
+        Serial.print(stopcode);
       }
    }
 }
