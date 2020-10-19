@@ -147,7 +147,7 @@ if __name__ == '__main__':
     # to stop elegantly
     while True:
         try:
-            run_start = time.time_ns()
+            run_start = time.time()*10**9
 
             # Collect data
             left, right = bb.collect_data()
