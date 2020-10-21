@@ -9,7 +9,8 @@
  */
 
 // Use soldered USB-Micro header
-#define SERIAL Serial
+#define SERIAL Serial // JETSON
+
 
 // Use unsoldered USB pinout - Don't use this
 //#define SERIAL Serial2
@@ -20,7 +21,7 @@
 constexpr int DURATION = 30;
 
 
-/*
+/*x`x`
  * Configuration that you probably don't want to touch
  */
 
@@ -110,6 +111,7 @@ void loop() {
     // Check run status                                                     
     else if (opcode == 0x20) {                                              // If the incoming OPCODE is '0x20' then the M4 will return the 'data_ready' flag (true/false)
       SERIAL.write(data_ready);                                             // Outputs TRUE or FALSE to the python script
+      SERIAL1 // write motion code to Teensy
     }
     // Retreive left buffer                                                 // Once the OPCODE '0x30' is recieved, the M4 will send the left ear's data (contained in the buffer)
     else if (opcode == 0x30) {
