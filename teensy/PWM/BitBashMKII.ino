@@ -31,12 +31,15 @@ void BitBash(unsigned char Byte1, unsigned char Byte2)
   if (Byte2Val == 0){
     return;
   }
+
   unsigned char Pin_Byte=Byte1;
   //Serial.println(Pin_Byte); used for testing
   int freq= 10000;
   double period = 1000000 / freq;//converts freuqency to period for delay  
-  int onFor = period*(255/Byte2Val);//calculates On for
-  int offFor= period*(1-(255/Byte2Val));
+ 
+  double onFor = period*(Byte2Val/255.0);//calculates On for
+  int offFor= period*(1-(Byte2Val/255.0));
+
   int len = 8;
   byte Comp= 1;
   int PinNum= 0;
@@ -129,8 +132,8 @@ void BitBash(unsigned char Byte1, unsigned char Byte2)
 }
 void loop() {
   // put your main code here, to run repeatedly:
-byte Byte1=0x0f;//this determines the active pins, each bit of a byte relates to an actuator
-unsigned char Byte2=0xff;//this determins the frequency, 0x00=10KHz - 0xff=35.5KHz increasing the value of the byte by 1 increases the PWM frequency by 100Hz
+byte Byte1=0xff;//this determines the active pins, each bit of a byte relates to an actuator
+unsigned char Byte2=0xf4;//this determins the Duty Cycle
 BitBash(Byte1,Byte2);//function call
 
 }
