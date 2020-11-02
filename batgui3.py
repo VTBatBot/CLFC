@@ -13,10 +13,11 @@ from PyQt5.QtCore import Qt
 import pyqtgraph as pg
 import numpy as np
 from scipy.signal import spectrogram, butter, lfilter
+from scipy import signal
 import time
 import colormaps as cm
 from enum import Enum
-import sip
+from rangeslider import RangeSlider
 
 os.environ['DISPLAY']=':0' # fixes display error with launch on startup
 
@@ -35,55 +36,47 @@ class Align(Enum):
     
     
 class Window(QtGui.QWidget): 
+    
+    ### Setting up the Window and graphical aspects ###
     def __init__(self):
         super().__init__()
         pg.setConfigOptions(imageAxisOrder='row-major') 
-            # flips image correct way
+            # flips image correct way, originally rotated 90deg
             
         self.setWindowIcon(QtGui.QIcon('VT_BIST_LOGO.ico'))
         self.setWindowTitle('BatBot')
         
         ## constants
-        self.width = 800        # width of the window
-        self.height = 430       # height of the window
-        self.plotWidth = 390    # width of each plot
-        self.N = int(10e3)           # number of data points
-        self.fs = int(400e3)         # sampling frequency in Hz
-        #self.T = 1 / self.fs;   # sampling interval
+        self.width = 800        # width of the window (pixels)
+        self.height = 430       # height of the window (pixels)
+        self.plotWidth = 375    # width of each plot (pixels)
+        self.N = int(10e3)      # number of data points per file
+        self.fs = int(400e3)    # sampling frequency (Hz)
         self.beginTime = 0      # start time of sampling
-        self.stopTime = 0.025   # stop time of sampling
+        self.stopTime = 0.025   # stop time of sampling (seconds)
+        self.maxFreq = 200e3    # maximum recorded frequency (Hz)
         
         ## strings for labels
-        self.nString = 'N: '
-        self.tString = 't: '
-        self.fsString = 'Fs: '
-        self.fpsString = 'fps: '
-        self.nMaxString = 'Nmax: '
+        self.nString = 'N: '        # elapsed number of iterations
+        self.tString = 't: '        # elapsed time since recording start
+        self.fsString = 'Fs: '      # sampling frequency
+        self.fpsString = 'fps: '    # frames per second of the displayed plots
+        self.nMaxString = 'Nmax: '  # maximum number of echoes
         
         ## variables
-        self.file = '20181111_121335587.txt'
-        self.useUpload = False
-        #self.startTime = 0
-        #self.endTime = 0
-        self.fps = 0.0          # frames per second
-        self.tPassed = 0
+        self.file = '20181111_121335587.txt'# IMPORTANT: initial displayed data
+        self.fps = 0.0                      # frames per second
+        self.tPassed = 0                    # time elapsed
         # array of sample time points
-        self.timeArray = np.linspace(self.beginTime, self.stopTime, self.fs); 
-        self.n = 0
+        self.timeArray = np.linspace(self.beginTime, self.stopTime, self.N)
+        self.n = 0                          #
         self.sigWindow = 'blackman'     # default signal window
         self.lowcut = 20e3      # low end of passed frequency range
         self.highcut = 100e3    # high end of passed frequency range
         self.nperseg = 256      # number of freq points per time segment
         self.noverlap = self.nperseg//5 # overlap of time segments
         self.nfft = self.nperseg       # not really sure
-        
-        ## create plots
-        self.leftPlot = pg.PlotWidget()     # widget to display plots
-        self.rightPlot = pg.PlotWidget()
-        self.leftPlot.setEnabled(False)     # disables plot interaction
-        self.rightPlot.setEnabled(False)
-        self.leftPlot.setFixedWidth(self.plotWidth)
-        self.rightPlot.setFixedWidth(self.plotWidth)
+        self.dBCutoff = 70
         
 # =============================================================================
 #         #timer for automatic execution
@@ -98,47 +91,59 @@ class Window(QtGui.QWidget):
         self.mainLayout = QtGui.QGridLayout()
         self.setLayout(self.mainLayout)
         
-        ## add plots
-        self.mainLayout.addWidget(self.leftPlot, 0, 0)
-        self.mainLayout.addWidget(self.rightPlot, 0, 1)
+        self.createInfoWidget()
+        self.createSettings()
         
-        self.displayInfo() # create the info display
+        self.displayInfo()
+        
+        ## sg settings menu
+        #self.displayInfo() # create the info display
+        self.labels() # self defined method
         # window starts with sgBtn toggled so spectrogram appears
         self.sgBtn.toggle()
-        self.labels() # self defined method
         
-    def displayInfo(self):
-        ## delete settings widgets if they exist
-        try:
-            self.mainLayout.removeWidget(self.settingsWidget)
-            sip.delete(self.settingsWidget)
-            self.settingsWidget = None
-        except AttributeError:
-            pass
-        
+    def createInfoWidget(self):
         ## creates the information display
         # groups all the information into one widget
         self.infoWidget = QtGui.QWidget()
-        self.mainLayout.addWidget(self.infoWidget, 1, 0, 1, 2)
         self.infoLayout =  QtGui.QGridLayout()
         self.infoWidget.setLayout(self.infoLayout)
-        #self.infoWidget.setStyleSheet('margin:0;'\
-        #                             'background-color:none')
-            # removes borders for all contained items
-        #self.infoWidget.setFlat(True)
         
-        ## Widgets
-        # spectrogram toggle
+        
+        ## create plot layout
+        self.view = pg.GraphicsView() # widget to display plots
+        self.plotLayout = pg.GraphicsLayout()
+        self.view.setCentralItem(self.plotLayout)
+        ## add plots
+        self.mainLayout.addWidget(self.view)
+        
+        ## add info widget
+        self.mainLayout.addWidget(self.infoWidget, 1, 0, 1, 2)
+        
+        # spectrogram radio button
         self.sgBtn = QtGui.QRadioButton('Spectrogram')
         self.sgBtn.toggled.connect(self.plotSelection)
         
-        # spectrum toggle
+        # spectrum radio button
         self.smBtn = QtGui.QRadioButton('Spectrum')
         self.smBtn.toggled.connect(self.plotSelection)
         
-        # oscillogram toggle
+        # oscillogram radio button
         self.ogBtn = QtGui.QRadioButton('Oscillogram')
         self.ogBtn.toggled.connect(self.plotSelection)
+        
+        
+        self.leftPlot = self.plotLayout.addPlot()   #create plots 
+        self.rightPlot = self.plotLayout.addPlot()
+        #self.leftPlot.setEnabled(False)     # disables plot interaction
+        #self.rightPlot.setEnabled(False)
+        self.leftPlot.setFixedWidth(self.plotWidth)
+        self.rightPlot.setFixedWidth(self.plotWidth)
+        
+        ## Widgets
+        
+        # button for the settings menu
+        self.menuBtn = QtGui.QPushButton('Settings')
         
         # Start/Stop button
         self.startBtn = QtGui.QPushButton('Start/Stop')
@@ -153,13 +158,9 @@ class Window(QtGui.QWidget):
         self.uploadBtn.clicked.connect(self.waveformUpload)
         
         # blank input for number of echoes
-        self.iterationInput = QtGui.QLineEdit('N_echoes')
+        self.iterationInput = QtGui.QLineEdit('Infinity')
         MIN = SizePolicy.MIN.value
         self.iterationInput.setSizePolicy(MIN, MIN)
-        
-        # button for the settings menu
-        self.menuBtn = QtGui.QPushButton('Settings')
-        self.menuBtn.clicked.connect(self.displaySettings)
         
         
         ## Labels
@@ -196,31 +197,15 @@ class Window(QtGui.QWidget):
         self.infoLayout.addWidget(self.menuBtn, 5, 8)
         
         #self.infoLayout.setContentsMargins(5, 0, 5, 5)
-        
-        
-    def displaySettings(self):
-        ## remove information widgets
-        self.mainLayout.removeWidget(self.infoWidget)
-        sip.delete(self.infoWidget)
-        self.infoWidget = None
-        
-        # save all current data for reversion
-        self.quicksave()
-        
-        ## widget for grouping items w/ grid layout
-        self.settingsWidget = QtGui.QWidget()
-        self.mainLayout.addWidget(self.settingsWidget, 1, 0, 1, 2)
-        self.settingsLayout = QtGui.QGridLayout()
-        self.settingsWidget.setLayout(self.settingsLayout)
-        
-        # revert changes button
-        revertBtn = QtGui.QPushButton('Revert')
-        revertBtn.clicked.connect(self.revert)
-        
-        # return to information display
-        closeBtn = QtGui.QPushButton('Close')
-        closeBtn.clicked.connect(self.displayInfo)
-        
+    
+    def displayInfo(self):
+        self.sgSettingsWgt.hide()
+        self.smSettingsWgt.hide()
+        self.ogSettingsWgt.hide()
+        self.infoWidget.show()
+    
+    def createSettings(self):
+        ## UNIVERSAL ##
         # dropdown box for signal windows
         self.windowSelect = QtGui.QComboBox()
         self.windowSelect.addItems(['blackman','hamming',
@@ -228,7 +213,33 @@ class Window(QtGui.QWidget):
                               'bohman','blackmanharris','nuttall',
                               'barthann','boxcar','triang'])
         self.windowSelect.currentTextChanged.connect(self.saveSettings)
-        windowLabel = QtGui.QLabel('Window:')
+        self.windowLabel = QtGui.QLabel('Window:')
+        
+        self.cutSlider = RangeSlider()
+        self.cutSlider.setRange(self.lowcut*1e-3, self.highcut*1e-3)
+        self.cutSlider.setRangeLimit(0, 200)
+        self.cutSlider.setTickInterval(20)
+        self.cutSlider.startValueChanged.connect(self.saveSettings)
+        self.cutSlider.stopValueChanged.connect(self.saveSettings)
+        self.highcutLabel = QtGui.QLabel('{:.0f} kHz  ----\ '.format(self.highcut*1e-3))
+        self.lowcutLabel = QtGui.QLabel('/----  {:.0f} kHz'.format(self.lowcut*1e-3))
+        self.cutLabel = QtGui.QLabel('Band-pass Range')
+        
+        # default button
+        self.defaultBtn = QtGui.QPushButton('Default')
+        self.defaultBtn.clicked.connect(self.defaultSettings)
+        
+        # return to information display
+        self.closeBtn = QtGui.QPushButton('Close')
+        self.closeBtn.clicked.connect(self.displayInfo)
+        
+        ## SPECTROGRAM ##
+        ## widget for grouping items w/ grid layout
+        self.sgSettingsWgt = QtGui.QWidget()
+        self.mainLayout.addWidget(self.sgSettingsWgt, 1, 0, 1, 2)
+        self.sgSettingsLayout = QtGui.QGridLayout()
+        self.sgSettingsWgt.setLayout(self.sgSettingsLayout)
+        
         
         # dropdown box for length of window (powers of 2)
         self.lengthSelect = QtGui.QComboBox()
@@ -243,10 +254,11 @@ class Window(QtGui.QWidget):
         self.noverlapSlider.setRange(20, 99)
         #self.noverlapSlider.setSingleStep(int(self.nperseg/10)) #unknown
         self.noverlapSlider.setPageStep(10)
-        self.noverlapSlider.setSliderPosition(100*self.noverlap/self.nperseg)
+        self.noverlapSlider.setSliderPosition(int(100*self.noverlap/self.nperseg))
         self.noverlapSlider.valueChanged.connect(self.saveSettings)
 # =============================================================================
-#         self.noverlapSlider.setStyleSheet(
+# Styling of the noverlap slider, not needed
+# self.noverlapSlider.setStyleSheet(
 # "QSlider::groove:horizontal {"\
 # "background: qlineargradient("\
 # "x1:0, y1:0, x2:0, y2:1, stop:0 #B1B1B1, stop:1 #c4c4c4);"\
@@ -278,39 +290,40 @@ class Window(QtGui.QWidget):
         noverlapDisp = self.noverlapSlider.sliderPosition()
         self.noverlapLabel = QtGui.QLabel('overlap: {}%'.format(str(noverlapDisp)))
         
-        # slider for high-pass cutoff frequency
-        self.highcutSlider = QtGui.QSlider(orientation=1) # 1==horizontal
-        self.highcutSlider.setRange(0, 200)
-        #self.highcutSlider.setValue(self.highcut)
-        self.highcutSlider.setSliderPosition(self.highcut*1e-3)
-        self.highcutSlider.valueChanged.connect(self.saveSettings) #implement
-        #self.highcutSlider.setSingleStep(1)
-        self.highcutLabel = QtGui.QLabel('High-pass Cutoff: {} kHz'.format(str(self.highcut*1e-3)))
         
-        # slider for low-pass cutoff frequency
-        self.lowcutSlider = QtGui.QSlider(orientation=1) # 1==horizontal
-        self.lowcutSlider.setRange(0, 200)
-        #self.lowcutSlider.setValue(20)
-        self.lowcutSlider.setSliderPosition(self.lowcut*1e-3)
-        self.lowcutSlider.valueChanged.connect(self.saveSettings) #implement
-        #self.lowcutSlider.setSingleStep(1)
-        self.lowcutLabel = QtGui.QLabel('Low-pass Cutoff: {} kHz'.format(str(self.lowcut*1e-3)))
         
-        CENTER = Align.CENTER.value
-        self.settingsLayout.addWidget(windowLabel, 1, 0)
-        self.settingsLayout.addWidget(self.windowSelect, 1, 1)
-        self.settingsLayout.addWidget(self.lengthLabel, 2, 0)
-        self.settingsLayout.addWidget(self.lengthSelect, 2, 1)
-        self.settingsLayout.addWidget(self.noverlapLabel, 0, 2, CENTER)
-        self.settingsLayout.addWidget(self.noverlapSlider, 1, 2, 3, 1, CENTER)
-        #self.settingsLayout.setRowMinimumHeight(1, 50)
-        self.settingsLayout.addWidget(self.highcutLabel, 0, 3)
-        self.settingsLayout.addWidget(self.highcutSlider, 1, 3)
-        self.settingsLayout.addWidget(self.lowcutLabel, 2, 3)
-        self.settingsLayout.addWidget(self.lowcutSlider, 3, 3)
-        self.settingsLayout.addWidget(revertBtn, 0, 4)
-        self.settingsLayout.addWidget(closeBtn, 1, 4)
         
+        ## SPECTRUM ##
+        ## widget for grouping items w/ grid layout
+        self.smSettingsWgt = QtGui.QWidget()
+        self.mainLayout.addWidget(self.smSettingsWgt, 1, 0, 1, 2)
+        self.smSettingsLayout = QtGui.QGridLayout()
+        self.smSettingsWgt.setLayout(self.smSettingsLayout)
+        
+        # Range slider
+        self.dbSlider = QtGui.QSlider(orientation=1) #1==horizontal
+        self.dbSlider.setRange(0, 70)
+        #self.dbSlider.setSingleStep(int(self.nperseg/10)) #unknown
+        self.dbSlider.setPageStep(10)
+        self.dbSlider.setSliderPosition(self.dBCutoff)
+        self.dbSlider.valueChanged.connect(self.saveSettings)
+        self.dbLabel = QtGui.QLabel("Range: {} dB".format(self.dBCutoff))
+        
+        
+        ## doesn't seem to change anything
+# =============================================================================
+#         MIN = SizePolicy.MIN.value
+#         
+#         self.windowSelect.setSizePolicy(MIN, MIN)
+#         windowLabel.setSizePolicy(MIN, MIN)
+# =============================================================================
+        
+        ## OSCILLOGRAM ##
+        # the main widget
+        self.ogSettingsWgt = QtGui.QWidget()
+        self.mainLayout.addWidget(self.ogSettingsWgt, 1, 0, 1, 2)
+        self.ogSettingsLayout = QtGui.QGridLayout()
+        self.ogSettingsWgt.setLayout(self.ogSettingsLayout)
         
     def saveSettings(self):
         self.sigWindow = self.windowSelect.currentText()
@@ -320,34 +333,96 @@ class Window(QtGui.QWidget):
         #print(self.noverlap)
         self.nfft = self.nperseg # can be changed
         noverlapDisp = self.noverlapSlider.sliderPosition()
-        self.noverlapLabel.setText('noverlap: {}%'.format(str(noverlapDisp)))
-        self.highcut = self.highcutSlider.sliderPosition()*1e3
-        highcutDisp = str(self.highcut*1e-3)
-        self.highcutLabel.setText('High-pass Cutoff: {} kHz'.format(highcutDisp))
-        self.lowcut = self.lowcutSlider.sliderPosition()*1e3
-        lowcutDisp = str(self.lowcut*1e-3)
-        self.lowcutLabel.setText('Low-pass Cutoff: {} kHz'.format(lowcutDisp))
-        self.plotSelection('sg')
+        self.noverlapLabel.setText('overlap: {}%'.format(str(noverlapDisp)))
+        start, stop = self.cutSlider.getRange()
+        self.lowcut = start*1e3
+        self.highcut = stop*1e3
+        self.lowcutLabel.setText('/----  {} kHz'.format(str(start)))
+        self.highcutLabel.setText('{} kHz  ----\ '.format(str(stop)))
+        self.dBCutoff = self.dbSlider.sliderPosition()
+        self.dbLabel.setText("Range: {} dB".format(self.dBCutoff))
         
-    def quicksave(self):
-        self.saveData = [self.sigWindow, self.nperseg, self.noverlap,
-                         self.lowcut, self.highcut]
+        self.reloadPlots()
         
-    def revert(self):
-        self.sigWindow = self.saveData[0]
+    def defaultSettings(self):
+        self.sigWindow = 'blackman'
         self.windowSelect.setCurrentText(self.sigWindow)
-        self.nperseg = self.saveData[1]
+        self.nperseg = 256
         self.lengthSelect.setCurrentText(str(self.nperseg))
-        self.noverlap = self.saveData[2]
+        self.noverlap = self.nperseg//5
         self.noverlapSlider.setSliderPosition(100*self.noverlap/self.nperseg)
         self.nfft = self.nperseg
-        self.lowcut = self.saveData[3]
-        self.lowcutSlider.setSliderPosition(self.lowcut)
-        self.highcut = self.saveData[4]
-        self.highcutSlider.setSliderPosition(self.highcut)
+        self.lowcut = 20e3
+        self.highcut = 100e3
+        start = self.lowcut * 1e-3
+        stop = self.highcut * 1e-3
+        self.cutSlider.setRange(start, stop)
+        self.lowcutLabel.setText('{} kHz'.format(str(start)))
+        self.highcutLabel.setText('{} kHz'.format(str(stop)))
         
-        self.plotSelection('sg')
+        self.reloadPlots()
         
+        
+    def dispSgSettings(self):
+        CENTER = Align.CENTER.value
+        RIGHT = Align.RIGHT.value
+        
+        self.sgSettingsLayout.addWidget(self.windowLabel, 1, 0)
+        self.sgSettingsLayout.addWidget(self.windowSelect, 1, 1)
+        self.sgSettingsLayout.addWidget(self.lengthLabel, 2, 0)
+        self.sgSettingsLayout.addWidget(self.lengthSelect, 2, 1)
+        self.sgSettingsLayout.addWidget(self.noverlapLabel, 0, 2, CENTER)
+        self.sgSettingsLayout.addWidget(self.noverlapSlider, 1, 2, 3, 1, CENTER)
+        #self.sgSettingsLayout.setRowMinimumHeight(1, 50)
+        self.sgSettingsLayout.addWidget(self.lowcutLabel, 0, 3)
+        self.sgSettingsLayout.addWidget(self.highcutLabel, 0, 5, RIGHT)
+        self.sgSettingsLayout.addWidget(self.cutLabel, 0, 4, CENTER)
+        self.sgSettingsLayout.addWidget(self.cutSlider, 1, 3, 1, 3)
+        self.sgSettingsLayout.setColumnMinimumWidth(4, 20)
+        self.sgSettingsLayout.setColumnMinimumWidth(6, 20)
+        self.sgSettingsLayout.addWidget(self.defaultBtn, 0, 7)
+        self.sgSettingsLayout.addWidget(self.closeBtn, 1, 7)
+        
+        self.infoWidget.hide()
+        self.sgSettingsWgt.show()
+    
+    
+        
+    def dispSmSettings(self):
+        RIGHT = Align.RIGHT.value
+        CENTER = Align.CENTER.value
+        
+        self.smSettingsLayout.addWidget(self.windowLabel, 0, 0)#, RIGHT)
+        self.smSettingsLayout.addWidget(self.windowSelect, 0, 1)
+        self.smSettingsLayout.addWidget(self.defaultBtn, 0, 6)
+        self.smSettingsLayout.addWidget(self.closeBtn, 1, 6)
+        self.smSettingsLayout.addWidget(self.dbLabel, 0, 2)
+        self.smSettingsLayout.addWidget(self.dbSlider, 1, 2, 1, 3)
+        self.smSettingsLayout.addWidget(self.lowcutLabel, 2, 1, RIGHT)
+        self.smSettingsLayout.addWidget(self.cutLabel, 2, 0, 1, 2, CENTER)
+        self.smSettingsLayout.addWidget(self.highcutLabel, 2, 6)
+        self.smSettingsLayout.addWidget(self.cutSlider, 2, 2, 1, 3)
+        
+        self.infoWidget.hide()
+        self.smSettingsWgt.show()
+        
+        
+        
+        
+    def dispOgSettings(self):
+        RIGHT = Align.RIGHT.value
+        
+        self.ogSettingsLayout.addWidget(self.cutLabel, 1, 0)
+        self.ogSettingsLayout.addWidget(self.lowcutLabel, 1, 1, RIGHT)
+        self.ogSettingsLayout.addWidget(self.cutSlider, 1, 2, 1, 3)
+        self.ogSettingsLayout.addWidget(self.highcutLabel, 1, 5)
+        self.ogSettingsLayout.addWidget(self.defaultBtn, 0, 6)
+        self.ogSettingsLayout.addWidget(self.closeBtn, 1, 6)
+        
+        self.infoWidget.hide()
+        self.ogSettingsWgt.show()
+    
+    ### Start of data processing ###
         
     def amplitude(self, filename):
         self.data = []
@@ -378,44 +453,71 @@ class Window(QtGui.QWidget):
         y = lfilter(b, a, data)
         return y
     
-    def build_og(self, Plot, Time, amp, side='left'):
-        Plot.clear()
-        Time = Time[20:]
-        amp = self.butter_bandpass_filter(amp, self.lowcut, 
+    def build_og(self, leftPlot, rightPlot, lamp, ramp):
+        leftPlot.clear()
+        rightPlot.clear()
+        feedback_cutoff = 15
+        Time = self.timeArray[feedback_cutoff:]
+        lamp = self.butter_bandpass_filter(lamp, self.lowcut, 
                                           self.highcut, self.fs)
-        amp = amp[20:]
-        Plot.plot(x=Time, y=amp)
-        Plot.setLabel('bottom', 'Time', units='s')
-        if side=='left':
-            Plot.setLabel('left', 'Amplitude')
+        ramp = self.butter_bandpass_filter(ramp, self.lowcut, 
+                                          self.highcut, self.fs)
+        lamp = lamp[feedback_cutoff:]
+        ramp = ramp[feedback_cutoff:]
+        leftPlot.plot(x=Time, y=lamp)
+        rightPlot.plot(x=Time, y=ramp)
+        leftPlot.setLabel('bottom', 'Time', units='s')
+        rightPlot.setLabel('bottom', 'Time', units='s')
+        
+        # attemps to fix SI Prefix issues
+        #laxis = leftPlot.getAxis('left')
+        #laxis.enableAutoSIPrefix(False)
+        #leftPlot.setAxisItems({'left': laxis})
+        
+        leftPlot.setLabel('left', 'Amplitude', units='V')
+        
+        leftPlot.autoRange()
+        rightPlot.autoRange()
     
     def ft(self, lamp, ramp):
-        lfreq = np.abs(np.fft.rfft(lamp))
-        rfreq = np.abs(np.fft.rfft(ramp))
-        lyf = lfreq[1:] #first data point is 0 and offsets rest of data
-        ryf = rfreq[1:]
+        window = self.windowSelection()
+        lfreq = np.abs(np.fft.rfft(lamp * window))
+        rfreq = np.abs(np.fft.rfft(ramp * window))
+        lowcut = int((self.lowcut/self.maxFreq) * len(lfreq))  # first data point is 0 and offsets rest of data
+        highcut = int((self.highcut/self.maxFreq) * len(lfreq))
+        lyf = lfreq[lowcut:highcut] 
+        ryf = rfreq[lowcut:highcut]
         yf = np.concatenate((lyf, ryf))
         base_dB = max(yf)
         ldB = []
         rdB = []
         for v in lyf:
-            ldB.append(10*np.log10(v/base_dB)) #convert to dB scale
+            ldB.append(20*np.log10(v/base_dB)) #convert to dB scale
         for v in ryf:
-            rdB.append(10*np.log10(v/base_dB)) #convert to dB scale
+            rdB.append(20*np.log10(v/base_dB)) #convert to dB scale
         return ldB, rdB
         
     def build_sm(self, leftPlot, rightPlot, lamp, ramp):
         leftPlot.clear()
         rightPlot.clear()
-        lyf, ryf = self.ft(lamp, ramp)
+        ldB, rdB = self.ft(lamp, ramp)
         xf = np.linspace(0.0, self.fs//2, self.N//2)
+        lowcut = int((self.lowcut/self.maxFreq) * len(xf))
+        highcut = int((self.highcut/self.maxFreq) * len(xf))
+        xf = xf[lowcut:highcut]
         #xf = xf[self.N//20:self.N//4]
         #yf = freq[self.N//20:self.N//4] #from 20kHz to 100kHz
-        leftPlot.plot(x=xf, y=lyf)
-        rightPlot.plot(x=xf, y=ryf)
+        leftPlot.plot(x=xf, y=ldB)
+        rightPlot.plot(x=xf, y=rdB)
+        
         leftPlot.setLabel('bottom', 'Frequency', units='Hz')
         rightPlot.setLabel('bottom', 'Frequency', units='Hz')
         leftPlot.setLabel('left', 'Amplitude', units='dB')
+        
+        leftPlot.autoRange()
+        rightPlot.autoRange()
+        leftPlot.setRange(xRange=(self.lowcut, self.highcut), yRange=(-1*self.dBCutoff, 0))
+        rightPlot.setRange(yRange=(-1*self.dBCutoff, 0))
         #rows = len(lyf)
         #columns = len(xf)
         #yscale = 1
@@ -429,6 +531,7 @@ class Window(QtGui.QWidget):
     def build_sg(self, leftPlot, rightPlot, ldata, rdata):
         leftPlot.clear()
         rightPlot.clear()
+        
         ldata = np.array(ldata)
         rdata = np.array(rdata)
         
@@ -444,6 +547,11 @@ class Window(QtGui.QWidget):
                                 noverlap=self.noverlap,
                                 nfft=self.nfft)
         
+        ## Tried to convert Sxx to logscale but coloring is incorrect
+        #Sxx = np.concatenate([lSxx,rSxx])
+        #lSxx = 20 * np.log10(lSxx/np.max(Sxx))
+        #rSxx = 20 * np.log10(rSxx/np.max(Sxx))
+        
         lImg = pg.ImageItem() #spectrogram is an image
         rImg = pg.ImageItem()
         leftPlot.addItem(lImg) #add sg to widget
@@ -452,7 +560,8 @@ class Window(QtGui.QWidget):
         ## color mapping
         nColors = 63
         #pos = np.linspace(0, 1, nColors)
-        pos = np.logspace(-3, 0, nColors)
+        #pos = [x**(1/3) for x in pos]
+        pos = np.logspace(-4, 0, nColors)
         color = cm.jet #63x4 array of rgba values
         
         cmap = pg.ColorMap(pos, color)
@@ -462,8 +571,6 @@ class Window(QtGui.QWidget):
         rImg.setLookupTable(lut)
         
         
-        #Sxx = Sxx * 1e10
-        
         ## cutting the frequency range to 20kHz-100kHz
         fRes = (f[1] - f[0])/2
         fLowcut = self.binarySearch(f, self.lowcut, fRes)
@@ -472,7 +579,7 @@ class Window(QtGui.QWidget):
         rSxx = rSxx[fLowcut:fHighcut]
         f = f[fLowcut:fHighcut]
         
-        print(np.shape(rSxx))
+        #print(np.shape(rSxx))
         #print(len(t))
         
         ## empty array for the image
@@ -488,27 +595,24 @@ class Window(QtGui.QWidget):
         rImg.scale(xscale, yscale)
         
         ## Attempts to fix yAxis
-        yAxis = pg.AxisItem('left')
-        yAxis.setRange(self.lowcut*1e-3, self.highcut*1e-3)
-        leftPlot.setAxisItems({'left': yAxis})
+        #yAxis = pg.AxisItem('left')
+        #yAxis.setRange(self.lowcut*1e-3, self.highcut*1e-3)
+        #leftPlot.setAxisItems({'left': yAxis})
         #leftPlot.setRange(yRange=(20,100))
         #leftPlot.getAxis('left').setRange(20,100)
         #leftPlot.getAxis('left').linkToView(None)
         #leftPlot.setTransformOriginPoint(QtCore.QPointF(0, 200))
         
-        
-        
-        self.lImg_array = lSxx
-        self.rImg_array = rSxx
-        
         ## normalize together
-        Sxx = np.concatenate([lSxx,rSxx])
-        Min = Sxx.min()
-        Max = Sxx.max()
-        lImg.setImage(self.lImg_array, autoLevels=False, levels=(Min, Max))
+        nSxx = np.concatenate([lSxx,rSxx])
+        Min = nSxx.min()
+        Max = nSxx.max()
+        lImg.setImage(lSxx, autoLevels=False, levels=(Min, Max))
             #level values are estimated from appearance
-        rImg.setImage(self.rImg_array, autoLevels=False, levels=(Min, Max))
+        rImg.setImage(rSxx, autoLevels=False, levels=(Min, Max))
         
+        leftPlot.autoRange()
+        rightPlot.autoRange()
         #leftPlot.setLimits(xMin=0, xMax=t[-1], yMin=0, yMax=f[-1])
         #rightPlot.setLimits(xMin=0, xMax=t[-1], yMin=0, yMax=f[-1])
         
@@ -553,8 +657,8 @@ class Window(QtGui.QWidget):
                 #print("Spectrum: {}".format(time.time() - tSm))
             elif self.ogBtn.isChecked():
                 #tOg = time.time()
-                self.build_og(self.leftPlot, self.timeArray, lamp, 'left')
-                self.build_og(self.rightPlot, self.timeArray, ramp, 'right')
+                self.build_og(self.leftPlot, self.rightPlot, lamp, ramp)
+                #self.build_og(self.rightPlot, self.timeArray, ramp, 'right')
                 #print("Oscillogram: {}".format(time.time() - tOg))
             #self.tPassed = time.time() - startTime
             tOnce = time.time() - tStart
@@ -573,18 +677,35 @@ class Window(QtGui.QWidget):
         self.startBtn.setChecked(False)
         
         
-    def plotSelection(self, plot=None):
+    def plotSelection(self):
+        self.whichSettings()
         lamp, ramp = self.amplitude(self.file)
-        if plot == 'sg':
-            self.build_sg(self.leftPlot, self.rightPlot, lamp, ramp)
-        elif self.sgBtn.isChecked():
+        if self.sgBtn.isChecked(): 
             self.build_sg(self.leftPlot, self.rightPlot, lamp, ramp)
         elif self.smBtn.isChecked():
             self.build_sm(self.leftPlot, self.rightPlot, lamp, ramp)
         elif self.ogBtn.isChecked():
-            self.build_og(self.leftPlot, self.timeArray, lamp, 'left')
-            self.build_og(self.rightPlot, self.timeArray, ramp, 'right')
+            self.build_og(self.leftPlot, self.rightPlot, lamp, ramp)
+            #self.build_og(self.rightPlot, self.timeArray, ramp, 'right')
             
+    def reloadPlots(self):
+        lamp, ramp = self.amplitude(self.file)
+        if self.sgBtn.isChecked():
+            self.build_sg(self.leftPlot, self.rightPlot, lamp, ramp)
+        elif self.smBtn.isChecked():
+            self.build_sm(self.leftPlot, self.rightPlot, lamp, ramp)
+        elif self.ogBtn.isChecked():
+            self.build_og(self.leftPlot, self.rightPlot, lamp, ramp)
+    
+    def whichSettings(self):
+        self.menuBtn.disconnect()
+        if self.sgBtn.isChecked():
+            self.menuBtn.clicked.connect(self.dispSgSettings)
+        elif self.smBtn.isChecked():
+            self.menuBtn.clicked.connect(self.dispSmSettings)
+        elif self.ogBtn.isChecked():
+            self.menuBtn.clicked.connect(self.dispOgSettings)
+    
     def waveformUpload(self):
         filepath = QtGui.QFileDialog.getOpenFileName(self, 'Open file', 
                                                      '/home/devan/BatBot/Data',
@@ -618,6 +739,32 @@ class Window(QtGui.QWidget):
                 else: 
                     first = mid + 1
         return index
+    
+    def windowSelection(self):
+        if self.sigWindow == 'blackman':
+            return np.blackman(self.N)
+        elif self.sigWindow == 'hamming':
+            return np.hamming(self.N)
+        elif self.sigWindow == 'hann':
+            return np.hanning(self.N)
+        elif self.sigWindow == 'bartlett':
+            return np.bartlett(self.N)
+        elif self.sigWindow == 'flattop':
+            return signal.flattop(self.N)
+        elif self.sigWindow == 'parzen':
+            return signal.parzen(self.N)
+        elif self.sigWindow == 'bohman':
+            return signal.bohman(self.N)
+        elif self.sigWindow == 'blackmanharris':
+            return signal.blackmanharris(self.N)
+        elif self.sigWindow == 'nuttall':
+            return signal.nuttall(self.N)
+        elif self.sigWindow == 'barthann':
+            return signal.barthann(self.N)
+        elif self.sigWindow == 'boxcar':
+            return signal.boxcar(self.N)
+        elif self.sigWindow == 'triang':
+            return signal.triang(self.N)
         
 
 if __name__ == '__main__':
