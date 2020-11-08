@@ -1,5 +1,8 @@
 // Needs Adafruit's ZeroDMA library
 
+// Serial1 goes to Jetson
+// Serial2 goes to Teensy 1
+
 // This section includes Adafruit's ZeroDMA library. You will need to get the files on your computer in order to compile.
 #include <Adafruit_ZeroDMA.h>
 #include <wiring_private.h>  // for access to pinPeripheral
@@ -9,7 +12,7 @@
  */
 
 // Use soldered USB-Micro header
-#define SERIAL Serial // JETSON
+#define SERIAL1 Serial1 // JETSON
 
 
 // Use unsoldered USB pinout - Don't use this
@@ -88,8 +91,8 @@ void loop() {
    * Handle communication
    */
 
-  if (SERIAL.available()) {                                                 // If the M4 is sending any data over...
-    uint8_t opcode = SERIAL.read();                                         // ... Read in the data that it's sending over
+  if (SERIAL1.available()) {                                                 // If the Jetson is sending any data over...
+    uint8_t opcode = SERIAL1.read();                                         // ... Read in the data that the Jetson sending over
 
     // Start run
     if (opcode == 0x10) {                                                   // If the M4 send over the OPCODE "0x10"...
@@ -110,23 +113,22 @@ void loop() {
     }
     // Check run status                                                     
     else if (opcode == 0x20) {                                              // If the incoming OPCODE is '0x20' then the M4 will return the 'data_ready' flag (true/false)
-      SERIAL.write(data_ready);                                             // Outputs TRUE or FALSE to the python script
-      SERIAL1 // write motion code to Teensy
+      SERIAL1.write(data_ready);                                             // Outputs TRUE or FALSE to the python script
     }
     // Retreive left buffer                                                 // Once the OPCODE '0x30' is recieved, the M4 will send the left ear's data (contained in the buffer)
     else if (opcode == 0x30) {
-      SERIAL.write(NUM_PAGES - left_in_index);
+      SERIAL1.write(NUM_PAGES - left_in_index);
       while (left_in_index < NUM_PAGES) {
-        SERIAL.write(
+        SERIAL1.write(
           reinterpret_cast<uint8_t *>(left_in_buffers[left_in_index++]),
           sizeof(uint16_t) * PAGE_SIZE);
       }
     }
     // Retreive right buffer
     else if (opcode == 0x31) {                                              // Similarly, once OPCODE '0x31' is recieved, the M4 sends the right ear's data
-      SERIAL.write(NUM_PAGES - right_in_index);
+      SERIAL1.write(NUM_PAGES - right_in_index);
       while (right_in_index < NUM_PAGES) {
-        SERIAL.write(
+        SERIAL1.write(
           reinterpret_cast<uint8_t *>(right_in_buffers[right_in_index++]),
           sizeof(uint16_t) * PAGE_SIZE);
       }
