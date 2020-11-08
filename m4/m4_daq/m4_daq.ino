@@ -11,13 +11,8 @@
  * Configuration
  */
 
-// Use soldered USB-Micro header
-
-#define JETSON_SERIAL Serial    // Jetson
-#define TEENSY1_SERIAL Serial1  // Teensy 1
-
-// Use unsoldered USB pinout - Don't use this
-//#define SERIAL Serial2
+#define JETSON_SERIAL Serial    // Jetson connection over USB port for hi-buad rate output (120-180 runs/s)
+#define TEENSY1_SERIAL Serial1  // Teensy 1 connection over pins 0 and 1 for valve control
 
 // Duration of waveforms in ms. The program size is directly proportional to
 // this value, and RAM size is the biggest bottleneck. 
@@ -60,6 +55,7 @@ Adafruit_ZeroDMA left_in_dma, right_in_dma, out_dma;
 void setup() {
   //TODO Serial doesn't work for the first second or two - DON'T WORRY ABOUT THIS, the delay takes care of it.
   // JETSON_SERIAL.begin(128000);  // only use this line if you are using wires to hook up the jetson.
+  TEENSY1_SERIAL.begin(9600);
   delay(2000);
   // Initialize all of the buffers - this section just fills the buffers with a bunch of zeros.
   for (auto i = 0; i < NUM_PAGES; i++)
@@ -96,8 +92,14 @@ void loop() {
     uint8_t opcode = JETSON_SERIAL.read();                                         // ... Read in the data that the Jetson sending over
     // Start run
     if (opcode == 0x10) {                                                   // If the M4 send over the OPCODE "0x10"...
-      uint8_t teensy1_opcode = JETSON_SERIAL.read();
-      uint8_t
+      // Pass over OPCODES to Teesny1
+      uint8_t teensy1_motionprofile = JETSON_SERIAL.read();
+      uint8_t teensy1_pwmsetting = JETSON_SERIAL.read();
+      uint8_t teensy1_opcode = 0x01;
+      TEENSY1_SERIAL.write(teensy1_opcode);
+      TEENSY1_SERIAL.write(teensy1_motionprofile);
+      TEENSY1_SERIAL.write(teensy1_pwmsetting);
+      
       data_ready = false;                                                   // Start the counters at 0
       left_in_index = right_in_index = out_index = 0;
 
