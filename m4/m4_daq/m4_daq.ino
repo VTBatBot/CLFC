@@ -12,8 +12,8 @@
  */
 
 // Use soldered USB-Micro header
-#define SERIAL1 Serial1 // JETSON
 
+#define SERIAL1 Serial1 // Teensy
 
 // Use unsoldered USB pinout - Don't use this
 //#define SERIAL Serial2
@@ -94,6 +94,7 @@ void loop() {
   if (SERIAL1.available()) {                                                 // If the Jetson is sending any data over...
     uint8_t opcode = SERIAL1.read();                                         // ... Read in the data that the Jetson sending over
 
+
     // Start run
     if (opcode == 0x10) {                                                   // If the M4 send over the OPCODE "0x10"...
       data_ready = false;                                                   // Start the counters at 0
@@ -113,7 +114,9 @@ void loop() {
     }
     // Check run status                                                     
     else if (opcode == 0x20) {                                              // If the incoming OPCODE is '0x20' then the M4 will return the 'data_ready' flag (true/false)
+
       SERIAL1.write(data_ready);                                             // Outputs TRUE or FALSE to the python script
+
     }
     // Retreive left buffer                                                 // Once the OPCODE '0x30' is recieved, the M4 will send the left ear's data (contained in the buffer)
     else if (opcode == 0x30) {
