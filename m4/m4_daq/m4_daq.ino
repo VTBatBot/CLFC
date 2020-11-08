@@ -1,6 +1,6 @@
 // Needs Adafruit's ZeroDMA library
 
-// Serial1 goes to Jetson
+// JETSON_SERIAL goes to Jetson
 // Serial2 goes to Teensy 1
 
 // This section includes Adafruit's ZeroDMA library. You will need to get the files on your computer in order to compile.
@@ -13,7 +13,8 @@
 
 // Use soldered USB-Micro header
 
-#define SERIAL1 Serial1 // Teensy
+#define JETSON_SERIAL Serial    // Jetson
+#define TEENSY1_SERIAL Serial1  // Teensy 1
 
 // Use unsoldered USB pinout - Don't use this
 //#define SERIAL Serial2
@@ -58,8 +59,8 @@ Adafruit_ZeroDMA left_in_dma, right_in_dma, out_dma;
 
 void setup() {
   //TODO Serial doesn't work for the first second or two - DON'T WORRY ABOUT THIS, the delay takes care of it.
+  // JETSON_SERIAL.begin(128000);  // only use this line if you are using wires to hook up the jetson.
   delay(2000);
-
   // Initialize all of the buffers - this section just fills the buffers with a bunch of zeros.
   for (auto i = 0; i < NUM_PAGES; i++)
     for (auto j = 0; j < PAGE_SIZE; j++) {
@@ -91,12 +92,12 @@ void loop() {
    * Handle communication
    */
 
-  if (SERIAL1.available()) {                                                 // If the Jetson is sending any data over...
-    uint8_t opcode = SERIAL1.read();                                         // ... Read in the data that the Jetson sending over
-
-
+  if (JETSON_SERIAL.available()) {                                                 // If the Jetson is sending any data over...
+    uint8_t opcode = JETSON_SERIAL.read();                                         // ... Read in the data that the Jetson sending over
     // Start run
     if (opcode == 0x10) {                                                   // If the M4 send over the OPCODE "0x10"...
+      uint8_t teensy1_opcode = JETSON_SERIAL.read();
+      uint8_t
       data_ready = false;                                                   // Start the counters at 0
       left_in_index = right_in_index = out_index = 0;
 
@@ -115,23 +116,23 @@ void loop() {
     // Check run status                                                     
     else if (opcode == 0x20) {                                              // If the incoming OPCODE is '0x20' then the M4 will return the 'data_ready' flag (true/false)
 
-      SERIAL1.write(data_ready);                                             // Outputs TRUE or FALSE to the python script
+      JETSON_SERIAL.write(data_ready);                                             // Outputs TRUE or FALSE to the python script
 
     }
     // Retreive left buffer                                                 // Once the OPCODE '0x30' is recieved, the M4 will send the left ear's data (contained in the buffer)
     else if (opcode == 0x30) {
-      SERIAL1.write(NUM_PAGES - left_in_index);
+      JETSON_SERIAL.write(NUM_PAGES - left_in_index);
       while (left_in_index < NUM_PAGES) {
-        SERIAL1.write(
+        JETSON_SERIAL.write(
           reinterpret_cast<uint8_t *>(left_in_buffers[left_in_index++]),
           sizeof(uint16_t) * PAGE_SIZE);
       }
     }
     // Retreive right buffer
     else if (opcode == 0x31) {                                              // Similarly, once OPCODE '0x31' is recieved, the M4 sends the right ear's data
-      SERIAL1.write(NUM_PAGES - right_in_index);
+      JETSON_SERIAL.write(NUM_PAGES - right_in_index);
       while (right_in_index < NUM_PAGES) {
-        SERIAL1.write(
+        JETSON_SERIAL.write(
           reinterpret_cast<uint8_t *>(right_in_buffers[right_in_index++]),
           sizeof(uint16_t) * PAGE_SIZE);
       }
