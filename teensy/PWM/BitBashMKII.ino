@@ -21,6 +21,7 @@ pinMode(18,OUTPUT);
 pinMode(19,OUTPUT);
 pinMode(22,OUTPUT);
 pinMode(23,OUTPUT);
+Serial4.begin(9600);
 /*pinMode(led, OUTPUT);
 Serial.begin(9600);used for testing */
 }
@@ -132,8 +133,14 @@ void BitBash(unsigned char Byte1, unsigned char Byte2)
 }
 void loop() {
   // put your main code here, to run repeatedly:
-byte Byte1=0xff;//this determines the active pins, each bit of a byte relates to an actuator
-unsigned char Byte2=0xf4;//this determins the Duty Cycle
-BitBash(Byte1,Byte2);//function call
-
+ if (Serial4.available()){
+    uint8_t motionProfile;
+    uint8_t pwmSetting; 
+     
+    uint8_t opcode = Serial4.read();
+    if (opcode == 0x01) {
+      motionProfile = Serial4.read();
+      pwmSetting = Serial4.read();
+      BitBash(motionProfile,pwmSetting);//function call
+    }
 }
